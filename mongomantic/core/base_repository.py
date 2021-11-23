@@ -102,11 +102,16 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         """Saves object in MongoDB"""
         try:
             document = model.to_mongo()
-            res = cls._get_collection().insert_one(document)
+            if model.id!=None:
+                res = cls._get_collection().update_one({"_id":model.id},{"$set":document})
+                document["_id"] = model.id
+            else:
+                res = cls._get_collection().insert_one(document)
+                document["_id"] = res.inserted_id
         except Exception as e:
             raise WriteError(f"Error inserting document: \n{e}")
 
-        document["_id"] = res.inserted_id
+     
         return cls.Meta.model.from_mongo(document)
 
     @classmethod
