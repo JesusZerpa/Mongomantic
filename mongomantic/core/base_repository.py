@@ -92,7 +92,7 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         limit = kwargs.pop("limit", 0)
 
         for key in kwargs:
-            if key not in cls.Meta.model.__fields__:
+            if not key.startswith("$") and key not in cls.Meta.model.__fields__:
                 raise FieldDoesNotExistError(f"Field {key} does not exist for model {cls.Meta.model}")
 
         return projection, skip, limit
