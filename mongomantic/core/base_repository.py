@@ -103,6 +103,9 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         try:
             document = model.to_mongo()
             if model.id!=None:
+                for elem in document:
+                    if callable(document[elem]):
+                        document[elem]=document[elem]()
                 res = cls._get_collection().update_one({"_id":model.id},{"$set":document})
                 document["_id"] = model.id
             else:
