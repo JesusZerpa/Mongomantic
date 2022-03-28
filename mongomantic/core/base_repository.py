@@ -72,6 +72,7 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         if indexes:
             try:
                 pymongo_indexes = [index.to_pymongo() for index in indexes]
+             
                 cls._get_collection().create_indexes(pymongo_indexes)
             except Exception as e:
                 raise IndexCreationError(f"Failed to create indexes: {e}")
@@ -102,10 +103,11 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         """Saves object in MongoDB"""
         try:
             document = model.to_mongo()
+            for elem in document:
+                if callable(document[elem]):
+                    document[elem]=document[elem]()
             if model.id!=None:
-                for elem in document:
-                    if callable(document[elem]):
-                        document[elem]=document[elem]()
+                
                 res = cls._get_collection().update_one({"_id":model.id},{"$set":document})
                 document["_id"] = model.id
             else:

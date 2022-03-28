@@ -32,7 +32,7 @@ class Index(BaseModel):
     # MongoDB will automatically delete documents from this collection after <int> seconds.
     # The indexed field must be a UTC datetime or the data will not expire.
     expire_after_seconds: Optional[int] = Field(
-        default=0,
+        default=None,
         description="Used to create an expiring (TTL) collection. Documents automatically deleted after <int> seconds.",
     )
 
@@ -52,11 +52,18 @@ class Index(BaseModel):
                 field = field[1:]
 
             pymongo_fields.append((field, direction))
-
-        return IndexModel(
-            pymongo_fields,
-            unique=self.unique,
-            background=self.background,
-            sparse=self.sparse,
-            expireAfterSeconds=self.expire_after_seconds,
-        )
+        if self.expire_after_seconds:
+            return IndexModel(
+                pymongo_fields,
+                unique=self.unique,
+                background=self.background,
+                sparse=self.sparse,
+                expireAfterSeconds=self.expire_after_seconds,
+            )
+        else:
+            return IndexModel(
+                pymongo_fields,
+                unique=self.unique,
+                background=self.background,
+                sparse=self.sparse,
+            )
