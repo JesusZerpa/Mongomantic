@@ -8,6 +8,7 @@ __all__ = ["MongomanticClient"]
 class MongomanticClient:
     client: MongoClient = None
     db: Database = None
+    uri:str=None
 
 
 def connect(uri: str, database: str, mock: bool = False) -> None:
@@ -21,6 +22,7 @@ def connect(uri: str, database: str, mock: bool = False) -> None:
         MongomanticClient.client = MongoClient(uri)
 
     MongomanticClient.db = MongomanticClient.client.__getattr__(database)
+    MongomanticClient.uri=uri
 
 
 def disconnect() -> None:

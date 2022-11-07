@@ -39,6 +39,8 @@ class ABRepositoryMeta(ABCMeta):
 
 
 class BaseRepository(metaclass=ABRepositoryMeta):
+    def __init__(self,instance):
+        self.instance=instance
     class Meta:
         @property
         def model(self) -> Type[MongoDBModel]:
@@ -72,7 +74,6 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         if indexes:
             try:
                 pymongo_indexes = [index.to_pymongo() for index in indexes]
-             
                 cls._get_collection().create_indexes(pymongo_indexes)
             except Exception as e:
                 raise IndexCreationError(f"Failed to create indexes: {e}")
@@ -93,22 +94,46 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         limit = kwargs.pop("limit", 0)
 
         for key in kwargs:
-            if not key.startswith("$") and key not in cls.Meta.model.__fields__:
-                raise FieldDoesNotExistError(f"Field {key} does not exist for model {cls.Meta.model}")
+
+            if not key.startswith("$") and key not in cls.Meta.model.__fields__ and "." not in key and key !="_id":
+                raise FieldDoesNotExistError(f"Field '{key}' does not exist for model {cls.Meta.model}")
 
         return projection, skip, limit
+    @classmethod
+    def update(cls, match,data):
+        try:
+            print("############## ",match,data)
+            cls._get_collection().update_many(match,data)
+        except Exception as e:
+            raise WriteError(f"Error updating document: \n{e}")
+    @classmethod
+    def update_one(cls, match,data):
+        try:
+
+            cls._get_collection().update_one(match,data)
+        except Exception as e:
+            raise WriteError(f"Error updating document: \n{e}")
 
     @classmethod
     def save(cls, model) -> Type[MongoDBModel]:
         """Saves object in MongoDB"""
         try:
+            for field in model.__annotations__:
+                if isinstance(getattr(model,field),MongoDBModel):
+
+                    if not getattr(model,field).id:
+                        raise Exception(f"Instance '{field}' no ha sido guardado")
+
+                
+
             document = model.to_mongo()
             for elem in document:
                 if callable(document[elem]):
                     document[elem]=document[elem]()
             if model.id!=None:
                 
-                res = cls._get_collection().update_one({"_id":model.id},{"$set":document})
+                res = cls._get_collection().update_one({"_id":model.id},
+                    {"$set":document})
                 document["_id"] = model.id
             else:
                 res = cls._get_collection().insert_one(document)
@@ -175,8 +200,43 @@ class BaseRepository(metaclass=ABRepositoryMeta):
 
         try:
             results = cls._get_collection().find(filter=kwargs, projection=projection, skip=skip, limit=limit)
+            
             for result in results:
                 yield cls.Meta.model.from_mongo(result)
+        except Exception as e:
+            raise InvalidQueryError(f"Invalid argument types: {e}")
+    @classmethod
+    def find_one(cls, **kwargs) -> Iterator[Type[MongoDBModel]]:
+        """Queries database and filters on kwargs provided.
+
+        Args:
+            kwargs: Filter keyword arguments
+
+            Reserved *optional* field names:
+            projection: can either be a list of field names that should be returned in the result set
+                        or a dict specifying the fields to include or exclude. If projection is a list
+                        “_id” will always be returned. Use a dict to exclude fields from the result
+                        (e.g. projection={‘_id’: False}).
+            skip: the number of documents to omit when returning results
+            limit: the maximum number of results to return
+
+        Note that invalid query errors may not be detected until the generator is consumed.
+        This is because the query is not executed until the result is needed.
+
+        Raises:
+            InvalidQueryError: In case one or more arguments were invalid
+
+        Yields:
+            Iterator[Type[MongoDBModel]]: Generator that wraps PyMongo cursor and transforms documents to models
+        """
+        projection, skip, limit = cls._process_kwargs(kwargs)
+
+        try:
+
+            data=cls._get_collection().find_one(filter=kwargs, projection=projection, skip=skip, limit=limit)
+            if data:
+                return cls.Meta.model.from_mongo(data)
+            
         except Exception as e:
             raise InvalidQueryError(f"Invalid argument types: {e}")
 
@@ -188,3 +248,4 @@ class BaseRepository(metaclass=ABRepositoryMeta):
                 yield cls.Meta.model.from_mongo(result)
         except Exception as e:
             raise InvalidQueryError(f"Error executing pipeline: {e}")
+

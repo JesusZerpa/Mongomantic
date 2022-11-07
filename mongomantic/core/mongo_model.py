@@ -25,6 +25,7 @@ class MongoDBModel(BaseModel, ABC):
 
     id: Optional[OID]
 
+
     class Config(BaseConfig):
         allow_population_by_field_name = True
         json_encoders = {
@@ -32,13 +33,21 @@ class MongoDBModel(BaseModel, ABC):
             ObjectId: str,
         }
 
+
+
+
     @classmethod
     def from_mongo(cls, data: Dict[str, Any]) -> Optional[Type["MongoDBModel"]]:
         """Constructs a pydantic object from mongodb compatible dictionary"""
+        data=dict(data)
         if not data:
             return None
 
         id = data.pop("_id", None)  # Convert _id into id
+        for elem in cls.__annotations__:
+            if elem in data and  isinstance(data[elem],MongoDBModel):
+                data[elem]=cls.__annotations__[elem](data[elem])
+        
         return cls(**dict(data, id=id))
 
     def to_mongo(self, **kwargs):
@@ -62,7 +71,10 @@ class MongoDBModel(BaseModel, ABC):
 
         if "id" in parsed:
             parsed.pop("id")
-
+        for elem in parsed:
+            if callable(parsed[elem]):
+                parsed[elem]=parsed[elem]()
+      
         return parsed
 
     def dict(self, **kwargs):
