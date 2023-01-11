@@ -46,7 +46,10 @@ class MongoDBModel(BaseModel, ABC):
         id = data.pop("_id", None)  # Convert _id into id
         for elem in cls.__annotations__:
             if elem in data and  isinstance(data[elem],MongoDBModel):
-                data[elem]=cls.__annotations__[elem](data[elem])
+                if type(cls.__annotations__[elem])==str:
+                    pass
+                else:
+                    data[elem]=cls.__annotations__[elem](data[elem])
         
         return cls(**dict(data, id=id))
 
@@ -76,6 +79,12 @@ class MongoDBModel(BaseModel, ABC):
                 parsed[elem]=parsed[elem]()
       
         return parsed
+    def __setattr__(self,name,value):
+        if name.startswith("__"):
+            print("bbbbbbb ",name,value)
+            self.__setattribute__(name,value)
+        else:
+            object.__setattr__(self,name,value)
 
     def dict(self, **kwargs):
         """Override self.dict to hide some fields that are used as metadata"""

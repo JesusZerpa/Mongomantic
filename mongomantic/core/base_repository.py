@@ -46,6 +46,10 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         def model(self) -> Type[MongoDBModel]:
             """Model class that subclasses MongoDBModel"""
             raise NotImplementedError
+        @property
+        def type_reset(self) -> bool:
+            """Model class that subclasses MongoDBModel"""
+            raise NotImplementedError
 
         @property
         def collection(self) -> str:
@@ -56,6 +60,7 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         def indexes(self) -> List[Index]:
             """List of MongoDB indexes that should be setup for this particular model"""
             raise NotImplementedError
+    
 
     @classmethod
     def _get_collection(cls) -> Collection:
@@ -124,19 +129,24 @@ class BaseRepository(metaclass=ABRepositoryMeta):
                     if not getattr(model,field).id:
                         raise Exception(f"Instance '{field}' no ha sido guardado")
 
-                
-
+     
             document = model.to_mongo()
+    
             for elem in document:
                 if callable(document[elem]):
                     document[elem]=document[elem]()
+                elif isinstance(document[elem],MongoDBModel):
+                    document[elem]=document[elem].dict()
+
             if model.id!=None:
-                
+     
                 res = cls._get_collection().update_one({"_id":model.id},
                     {"$set":document})
                 document["_id"] = model.id
             else:
+                
                 res = cls._get_collection().insert_one(document)
+     
                 document["_id"] = res.inserted_id
         except Exception as e:
             raise WriteError(f"Error inserting document: \n{e}")
@@ -229,16 +239,66 @@ class BaseRepository(metaclass=ABRepositoryMeta):
         Yields:
             Iterator[Type[MongoDBModel]]: Generator that wraps PyMongo cursor and transforms documents to models
         """
+        import pydantic
         projection, skip, limit = cls._process_kwargs(kwargs)
 
+        import time
+        data=cls._get_collection().find_one(filter=kwargs, 
+                projection=projection, 
+                skip=skip, limit=limit)
         try:
 
-            data=cls._get_collection().find_one(filter=kwargs, projection=projection, skip=skip, limit=limit)
-            if data:
-                return cls.Meta.model.from_mongo(data)
             
+
+            if data:
+
+                if "type_verification" in dir(cls.Meta):
+                    if self.cls.Meta.type_verification:
+                        return cls.Meta.model.from_mongo(data)
+
+                if "type_reset" in dir(cls.Meta):
+                    
+                    if cls.Meta.type_reset:
+                      
+                        for elem in data:
+                            
+                            if elem in cls.Meta.model.__annotations__ :
+                     
+                                if elem in cls.Meta.model.__dict__:
+                           
+                                    data[elem]=cls.Meta.model.__dict__[elem]
+                def repare_data(data):
+                    try:
+                        return cls.Meta.model.from_mongo(data)
+                    except pydantic.error_wrappers.ValidationError as e:
+                        """
+                        Aplicando correccion de tipos para registros guardados en db
+                        """
+                        
+
+                        for err in e.errors():
+                            
+                            if err["type"]=='type_error.none.not_allowed':
+                                if callable(cls.Meta.model.__fields__[err["loc"][0]].default):
+                                    data[err["loc"][0]]=cls.Meta.model.__fields__[err["loc"][0]].default()
+                            
+                            elif "type expected" in err["msg"]:
+                              
+                                data[err["loc"][0]]=cls.Meta.model.__fields__[err["loc"][0]].type_()
+                                pass
+                            else: 
+                            
+                                data[err["loc"][0]]=cls.Meta.model.__fields__[err["loc"][0]].default
+                           
+                        
+                        try:
+                            return cls.Meta.model.from_mongo(data)
+                        except pydantic.error_wrappers.ValidationError as e:
+                            return repare_data(data)
+
+                return repare_data(data)
         except Exception as e:
-            raise InvalidQueryError(f"Invalid argument types: {e}")
+            raise InvalidQueryError(f"Invalid argument types: {e}\n\n{cls.Meta.model.__name__}:{data['_id']}")
 
     @classmethod
     def aggregate(cls, pipeline: List[Dict]):
